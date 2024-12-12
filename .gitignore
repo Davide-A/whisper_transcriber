@@ -1,0 +1,12 @@
+# Ignore Python cache files
+__pycache__/
+*.pyc
+
+# Exclude the virtual environment folder
+venv/
+
+# Exclude all .wav files
+*.wav
+
+# Exclude all .txt files
+*.txt
