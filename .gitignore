@@ -4,9 +4,10 @@ __pycache__/
 
 # Exclude the virtual environment folder
 venv/
-
-# Exclude all .wav files
+varys/
+# Exclude all audio files
 *.wav
+*.mp3
 
 # Exclude all .txt files
 *.txt
