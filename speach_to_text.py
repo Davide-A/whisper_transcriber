@@ -6,7 +6,6 @@ from pydub import AudioSegment
 
 def chunk_audio(input_file, temp_dir, chunk_size_mb=25):
     chunk_size_bytes = chunk_size_mb * 1024 * 1024
-    print("here")
     audio = AudioSegment.from_file(input_file)
 
     audio_size = os.path.getsize(input_file)
@@ -26,7 +25,7 @@ if __name__ == '__main__':
     temp_dir = "media/temp"
 
     # Initialize Whisper model
-    model = whisper.load_model("small")
+    model = whisper.load_model("large")
 
     prompt = (
         f"Questo è il frammento di una lezione universitaria di teologia. L'argomento "
@@ -35,7 +34,7 @@ if __name__ == '__main__':
 
     # Process each audio file in the input directory
     for file_name in os.listdir(input_dir):
-        if file_name.endswith(".WAV"):
+        if (file_name.endswith(".WAV")) | (file_name.endswith(".mp3")):
             input_path = os.path.join(input_dir, file_name)
             print(f"Processing: {input_path}")
 
