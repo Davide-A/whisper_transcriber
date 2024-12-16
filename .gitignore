@@ -8,5 +8,4 @@ varys/
 # Exclude all audio files
 *.wav
 *.mp3
-
-# Exclude all .txt files
+*.env
