@@ -2,9 +2,11 @@ import os
 import time
 import whisper
 import tiktoken
-from openai import OpenAI
+import torch
+from docx import Document
 from pathlib import Path
 from pydub import AudioSegment
+from transformers import AutoTokenizer, AutoModelForCausalLM
 
 
 def chunk_audio(input_file, temp_dir, chunk_size_mb=20):
@@ -33,9 +35,9 @@ def milliseconds_until_sound(sound, silence_threshold_in_decibels=-20.0, chunk_s
     return trim_ms
 
 
-def trim_start(filepath):
+def trim_start(filepath, dir):
     path = Path(filepath)
-    directory = path.parent
+    directory = Path(dir)
     filename = path.name
 
     if filename.endswith(".WAV"):
@@ -65,7 +67,7 @@ def transcribe_audio(temp_dir, file):
 
     prompt = (
         f"Questo è il frammento di una lezione universitaria di teologia. L'argomento "
-        f"è l'introduzione alla sacra scrittura, nella lezione sono raccontati personaggi biblici dell'antico testamento come:"
+        f"è trattato attraerso le fonti storiche. Fai attenzione ai nomi biblici dell'antico testamento come:"
         f"Samuele, Saul, Rut, Davide, Salomone, Roboamo, Geroboamo."
     )
 
@@ -79,28 +81,25 @@ def transcribe_audio(temp_dir, file):
     return transcription['text']
 
 
-def biblical_assistant(content):
-    system_prompt = """Sei un dotto assistente universitario esperto di teologia e antico testamente.
+def biblical_assistant(input_text):
+
+    system_prompt = f"""Sei un dotto assistente universitario esperto di teologia e antico testamente.
     Ti sarà fornita la trascrizione di una lezione universitaria di teologia. Il tuo compito è revisionarla, correggendo la sintassi della transcrizione, aggiungere la punteggiatura necessaria per produrre un discorso scorrevole. 
-    Dovresti aggiungere quindi, virgole, punti alla fine dei periodi, punti di domanda, lettere maiusole e formattare il discorso correttamente. 
-    Inoltre dovrai correggere eventuali nomi storici, biblici dell'antico testamento che dovessero essere stati trascritti male, completare eventuali discorsi incompleti a causa di errori di trascrizione, approfondendo l'argomento con quello che sai per produrre un testo scorrevole e comprensibile sul quale 
+    Dovresti aggiungere quindi, virgole, punti alla fine dei periodi, punti di domanda, lettere maiusole e formattare il discorso correttamente. Considera che la trascrizione potrebbe contenere ripetizioni e allucinazioni del modello che l'ha trascritta.
+    Inoltre dovrai correggere eventuali errori nei nomi storici, biblici dell'antico testamento che dovessero essere stati trascritti male, completare eventuali discorsi incompleti a causa di errori di trascrizione, approfondendo l'argomento con quello che sai per produrre un testo scorrevole e comprensibile sul quale 
     poi permettere agli studenti di studiare. Cerca non non tralasciare nulla, i dettagli e aneddoti storici possono essere importanti per eccellere nell'esame.
-    La trascrizione ti sarà fornita in più parti, crea un titolo attinente all'argomento per ogni parte """
-    response = client.chat.completions.create(
-        model="gpt-4",
-        temperature=0,
-        messages=[
-            {
-                "role": "system",
-                "content": system_prompt
-            },
-            {
-                "role": "user",
-                "content": content
-            }
-        ]
-    )
-    return response
+    La trascrizione ti sarà fornita in più parti, crea un titolo attinente all'argomento per ogni parte.
+    Adesso formatta questo testo:
+    {input_text}
+    """
+
+    inputs = tokenizer(system_prompt, return_tensors="pt", truncation=True, max_length=2048)
+
+    outputs = model.generate(**inputs, max_length=4096, temperature=0.9)
+    
+    formatted_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
+
+    return formatted_text
 
 
 def calculate_tokens(text, model="gpt-4"):
@@ -141,16 +140,8 @@ def split_text_with_overlap(text, chunk_size, overlap_size):
 
 # Modify the transcription loop
 def process_transcription(ascii_transcript, output_dir_assis, model, chunk_size=6500, overlap_size=200):
-    """
-    Process transcription using the model with overlapping chunks.
 
-    Parameters:
-    - ascii_transcript: The full text transcript to process.
-    - output_dir_assis: Path to save the final output.
-    - model: The model function for processing.
-    - chunk_size: Maximum size of each chunk.
-    - overlap_size: Number of characters to overlap between chunks.
-    """
+    assistant_model
     print("Invoking biblical assistant...")
     chunks = split_text_with_overlap(ascii_transcript, chunk_size, overlap_size)
 
@@ -158,8 +149,7 @@ def process_transcription(ascii_transcript, output_dir_assis, model, chunk_size=
         for idx, chunk in enumerate(chunks):
             print(f"Processing chunk {idx + 1}/{len(chunks)}...")
             # Send chunk to the model
-            response = model(chunk)
-            final_transcript = response.choices[0].message.content
+            final_transcript = biblical_assistant(chunk)
 
             # Write the final transcript to the file
             f.write(final_transcript + "\n")  # Add spacing between chunks
@@ -173,21 +163,29 @@ if __name__ == '__main__':
     # teologia fondamentale
     # storia della chiesa 1-4
 
-    input_dir = "media/input/st_chiesa/"
-    output_dir_trans = "media/output/st_chiesa/transcripted"
-    output_dir_assis = "media/output/st_chiesa/processed"
+    # corso = "teo_mor_fond"
+    # corso = "int_scrit"
+    # corso = "st_chiesa"
+    corso = "teo_fond"
+    
+    input_dir = f"media/input/{corso}/"
+    output_dir_trans = f"media/output/{corso}/transcripted"
+    output_dir_assis = f"media/output/{corso}/processed"
+    temp_trim = "media/temp_trimmed"
     temp_dir = "media/temp"
 
     # Initialize Whisper model and assistant
     print("Inizialising the models")
-    client = OpenAI()
+    tokenizer = AutoTokenizer.from_pretrained("tiiuae/falcon-11B")
+    assistant_model = AutoModelForCausalLM.from_pretrained("tiiuae/falcon-11B", device_map="auto")
+    tokenizer = AutoTokenizer.from_pretrained(assistant_model)
     model = whisper.load_model("large")
     print("\n")
 
     # Trim the start of the original audio file to remove silence from audio
     print("Trimming the audio file")
     audios = os.listdir(input_dir)
-    trimmed_audio, trimmed_filename = trim_start(input_dir + audios[0])
+    trimmed_audio, trimmed_filename = trim_start(input_dir + audios[0], temp_trim)
     if trimmed_filename.suffix == ".WAV":
         trimmed_audio = AudioSegment.from_file(trimmed_filename, format="WAV")
         format = "WAV"
@@ -237,7 +235,9 @@ if __name__ == '__main__':
 
     # cleaning temp
     files = os.listdir(temp_dir)
-    for file in files:
+    trimmed = os.listdir(temp_trim)
+    temp = files + trimmed
+    for file in temp:
         file_path = os.path.join(temp_dir, file)
         if os.path.isfile(file_path):
             os.remove(file_path)
@@ -255,10 +255,27 @@ if __name__ == '__main__':
 
     file_name = f"{Path(audios[0]).stem}_processed.txt"
     output_file_path  = os.path.join(output_dir_assis, file_name)
-    process_transcription(ascii_transcript, output_file_path, biblical_assistant)
-    print("Transcription saved. Ending job")
+    process_transcription(ascii_transcript, output_file_path, pipeline)
 
-    # da migliorare:
-    #- vedere se aggiustare il prompt di processing. controllare docx
-    #- formattare un buon word
-    #- 
+    with open(output_file_path, 'r', encoding='utf-8') as file:
+        text_content_new = file.read()
+
+    doc_new = Document()    
+    path = Path(output_file_path)
+    filename = path.name
+
+    # suddivisone del testo in paragrafi
+    paragraphs_new = text_content_new.split("\n\n")
+
+    for paragraph in paragraphs_new:
+
+        if paragraph.startswith("Titolo:"):
+            title = paragraph.replace("Titolo:", "").strip()
+            doc_new.add_heading(title, level=2)
+        else:
+            doc_new.add_paragraph(paragraph.strip())
+
+    # Save the document to a Word file
+    output_path_new = f"{filename}"
+    doc_new.save(output_path_new)
+    print("Transcription saved. Ending job")
